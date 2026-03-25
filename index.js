@@ -409,7 +409,7 @@ client.on('interactionCreate', async (interaction) => {
           .setCustomId('recruiter_id')
           .setLabel('ID do recrutador (ID ou @menção)')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(false)
           .setMaxLength(64);
 
         modal.addComponents(
@@ -536,7 +536,11 @@ client.on('interactionCreate', async (interaction) => {
           try {
             await interaction.message.delete();
           } catch {
-            await interaction.message.edit({ components: [] });
+            try {
+              await interaction.message.edit({ components: [] });
+            } catch {
+              // ignore
+            }
           }
 
           await interaction.editReply({ content: 'Encomenda aceita e enviada para pendentes de entrega.' });
@@ -569,7 +573,11 @@ client.on('interactionCreate', async (interaction) => {
           try {
             await interaction.message.delete();
           } catch {
-            await interaction.message.edit({ components: [] });
+            try {
+              await interaction.message.edit({ components: [] });
+            } catch {
+              // ignore
+            }
           }
 
           await interaction.editReply({ content: 'Encomenda recusada.' });
@@ -606,7 +614,11 @@ client.on('interactionCreate', async (interaction) => {
           try {
             await interaction.message.delete();
           } catch {
-            await interaction.message.edit({ components: [] });
+            try {
+              await interaction.message.edit({ components: [] });
+            } catch {
+              // ignore
+            }
           }
 
           await interaction.editReply({ content: 'Encomenda marcada como entregue e registrada em vendas.' });
@@ -681,18 +693,13 @@ client.on('interactionCreate', async (interaction) => {
         const recruiterRaw = interaction.fields.getTextInputValue('recruiter_id')?.trim();
         const recruiterId = normalizeRecruiterId(recruiterRaw);
 
-        if (!recruiterId) {
-          await interaction.reply({ content: 'ID do recrutador inválido. Envie um ID numérico ou @menção.', ephemeral: true });
-          return;
-        }
-
         const reg = {
           id: `${Date.now()}_${interaction.user.id}`,
           discordUserId: interaction.user.id,
           name,
           userIdProvided,
           phone,
-          recruiterId,
+          recruiterId: recruiterId || null,
           status: 'pending',
           createdAt: new Date().toISOString(),
         };
