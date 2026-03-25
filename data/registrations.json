@@ -1,0 +1,23 @@
+[
+  {
+    "id": "1774410063740_680833939836764170",
+    "discordUserId": "680833939836764170",
+    "name": "DSFSDF",
+    "userIdProvided": "SDFSDF",
+    "phone": "SDFSDFSD",
+    "recruiterId": "1206197946740383777",
+    "createdAt": "2026-03-25T03:41:03.740Z"
+  },
+  {
+    "id": "1774447198237_504819092436287488",
+    "discordUserId": "504819092436287488",
+    "name": "Kimy",
+    "userIdProvided": "2251",
+    "phone": "000000111",
+    "recruiterId": "500157311277334538",
+    "status": "approved",
+    "createdAt": "2026-03-25T13:59:58.237Z",
+    "decidedAt": "2026-03-25T14:05:05.620Z",
+    "decidedBy": "680833939836764170"
+  }
+]
