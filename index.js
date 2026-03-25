@@ -307,9 +307,11 @@ function buildOrderEmbed(order) {
       { name: 'Cliente', value: customerName, inline: true },
       { name: 'Contato', value: customerContact, inline: true },
       { name: 'Data', value: String(order.date || '-'), inline: true },
+
       { name: 'Fac', value: String(order.fac || '-'), inline: true },
-      { name: 'Produto', value: String(order.product || '-'), inline: false },
-      { name: 'Entrega', value: String(order.delivery || '-'), inline: false },
+      { name: 'Produto', value: String(order.product || '-'), inline: true },
+      { name: 'Entrega', value: String(order.delivery || '-'), inline: true },
+
       { name: 'Status', value: statusText, inline: true },
       { name: 'Criado por', value: createdBy, inline: true },
       { name: 'Responsável', value: responsible, inline: true },
@@ -736,7 +738,11 @@ client.on('interactionCreate', async (interaction) => {
 
         const reviewChannel = await client.channels.fetch(ORDERS_REVIEW_CHANNEL_ID);
         if (!reviewChannel?.isTextBased?.()) throw new Error('ORDERS_REVIEW_CHANNEL_ID is not a text channel');
-        const sent = await reviewChannel.send({ content: buildOrderText(order), components: buildOrderReviewActions(order) });
+        const sent = await reviewChannel.send({
+          embeds: [buildOrderEmbed(order)],
+          components: buildOrderReviewActions(order),
+          files: brandingFiles(),
+        });
 
         order.reviewMessageId = sent.id;
         orders[orders.length - 1] = order;
