@@ -4,6 +4,8 @@ node_modules/
 # Runtime data (avoid leaking real orders/registrations)
 data/orders.json
 data/registrations.json
+data/approvals.json
+data/state.json
 
 # Logs
 npm-debug.log*

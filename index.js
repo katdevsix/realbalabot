@@ -1,47 +1,52 @@
  const fs = require('node:fs');
- const path = require('node:path');
- const {
-   Client,
-   Events,
-   GatewayIntentBits,
-   REST,
-   Routes,
-   SlashCommandBuilder,
-   EmbedBuilder,
-   AttachmentBuilder,
-   ActionRowBuilder,
-   ButtonBuilder,
-   ButtonStyle,
-   ModalBuilder,
-   TextInputBuilder,
-   TextInputStyle,
- } = require('discord.js');
- require('dotenv').config();
+const path = require('node:path');
+const {
+  Client,
+  ChannelType,
+  Events,
+  GatewayIntentBits,
+  PermissionsBitField,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  EmbedBuilder,
+  AttachmentBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
+require('dotenv').config();
 
- const {
-   DISCORD_TOKEN,
-   CLIENT_ID,
-   GUILD_ID,
-   PANEL_CHANNEL_ID,
-   REGISTRATION_CHANNEL_ID,
-   RANKING_CHANNEL_ID,
-   MEMBER_ROLE_ID,
-   ORDERS_PANEL_CHANNEL_ID,
-   ORDERS_REVIEW_CHANNEL_ID,
-   ORDERS_PENDING_CHANNEL_ID,
-   SALES_LOG_CHANNEL_ID,
- } = process.env;
+const {
+  DISCORD_TOKEN,
+  CLIENT_ID,
+  GUILD_ID,
+  PANEL_CHANNEL_ID,
+  REGISTRATION_CHANNEL_ID,
+  RANKING_CHANNEL_ID,
+  MEMBER_ROLE_ID,
+  ORDERS_PANEL_CHANNEL_ID,
+  ORDERS_REVIEW_CHANNEL_ID,
+  ORDERS_PENDING_CHANNEL_ID,
+  SALES_LOG_CHANNEL_ID,
+} = process.env;
 
- if (!DISCORD_TOKEN) throw new Error('Missing DISCORD_TOKEN in .env');
- if (!CLIENT_ID) throw new Error('Missing CLIENT_ID in .env');
- if (!PANEL_CHANNEL_ID) throw new Error('Missing PANEL_CHANNEL_ID in .env');
- if (!REGISTRATION_CHANNEL_ID) throw new Error('Missing REGISTRATION_CHANNEL_ID in .env');
- if (!RANKING_CHANNEL_ID) throw new Error('Missing RANKING_CHANNEL_ID in .env');
- if (!MEMBER_ROLE_ID) throw new Error('Missing MEMBER_ROLE_ID in .env');
- if (!ORDERS_PANEL_CHANNEL_ID) throw new Error('Missing ORDERS_PANEL_CHANNEL_ID in .env');
- if (!ORDERS_REVIEW_CHANNEL_ID) throw new Error('Missing ORDERS_REVIEW_CHANNEL_ID in .env');
- if (!ORDERS_PENDING_CHANNEL_ID) throw new Error('Missing ORDERS_PENDING_CHANNEL_ID in .env');
- if (!SALES_LOG_CHANNEL_ID) throw new Error('Missing SALES_LOG_CHANNEL_ID in .env');
+const FARM_TICKET_PANEL_CHANNEL_ID = '1452781827407216837';
+const FARM_TICKET_CATEGORY_ID = '1452781296618049619';
+
+if (!DISCORD_TOKEN) throw new Error('Missing DISCORD_TOKEN in .env');
+if (!CLIENT_ID) throw new Error('Missing CLIENT_ID in .env');
+if (!PANEL_CHANNEL_ID) throw new Error('Missing PANEL_CHANNEL_ID in .env');
+if (!REGISTRATION_CHANNEL_ID) throw new Error('Missing REGISTRATION_CHANNEL_ID in .env');
+if (!RANKING_CHANNEL_ID) throw new Error('Missing RANKING_CHANNEL_ID in .env');
+if (!MEMBER_ROLE_ID) throw new Error('Missing MEMBER_ROLE_ID in .env');
+if (!ORDERS_PANEL_CHANNEL_ID) throw new Error('Missing ORDERS_PANEL_CHANNEL_ID in .env');
+if (!ORDERS_REVIEW_CHANNEL_ID) throw new Error('Missing ORDERS_REVIEW_CHANNEL_ID in .env');
+if (!ORDERS_PENDING_CHANNEL_ID) throw new Error('Missing ORDERS_PENDING_CHANNEL_ID in .env');
+if (!SALES_LOG_CHANNEL_ID) throw new Error('Missing SALES_LOG_CHANNEL_ID in .env');
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection:', reason);
@@ -55,9 +60,20 @@ const DATA_DIR = path.join(__dirname, 'data');
 const REGISTRATIONS_PATH = path.join(DATA_DIR, 'registrations.json');
 const STATE_PATH = path.join(DATA_DIR, 'state.json');
 const ORDERS_PATH = path.join(DATA_DIR, 'orders.json');
+const APPROVALS_PATH = path.join(DATA_DIR, 'approvals.json');
 
 const BRAND_IMAGE_PATH = path.join(__dirname, 'images', 'standard.gif');
 const BRAND_IMAGE_NAME = 'standard.gif';
+
+const RANKING_SOURCE_CHANNEL_ID = '1486206528720470148';
+
+let registrationsLock = Promise.resolve();
+
+function withRegistrationsLock(fn) {
+  const run = registrationsLock.then(fn, fn);
+  registrationsLock = run.catch(() => {});
+  return run;
+}
 
 function brandingFiles() {
   return [new AttachmentBuilder(BRAND_IMAGE_PATH, { name: BRAND_IMAGE_NAME })];
@@ -72,21 +88,75 @@ function readJson(filePath, fallback) {
   }
 }
 
- function writeJson(filePath, data) {
-   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
- }
+function writeJson(filePath, data) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+}
 
- function normalizeRecruiterId(input) {
-   const s = String(input ?? '').trim();
-   const m = s.match(/^<@!?([0-9]{15,25})>$/);
-   if (m) return m[1];
-   if (/^[0-9]{15,25}$/.test(s)) return s;
-   return null;
- }
+function normalizeRecruiterId(input) {
+  const s = String(input ?? '').trim();
+  const m = s.match(/^<@!?([0-9]{15,25})>$/);
+  if (m) return m[1];
+  if (/^[0-9]{15,25}$/.test(s)) return s;
+  return null;
+}
 
 function recruiterDisplay(recruiterId) {
-  return recruiterId ? `<@${recruiterId}>` : '`inválido`';
+  return recruiterId ? String(recruiterId) : '-';
+}
+
+function readApprovals() {
+  return readJson(APPROVALS_PATH, { counts: {} });
+}
+
+function writeApprovals(data) {
+  writeJson(APPROVALS_PATH, data);
+}
+
+function extractApproverIdFromEmbed(embed) {
+  const fields = embed?.fields || [];
+
+  const statusField = fields.find((f) => String(f?.name || '').toLowerCase() === 'status');
+  const statusText = String(statusField?.value || '').toLowerCase();
+  if (statusText && !statusText.includes('aprov')) return null;
+
+  const fieldPairs = fields
+    .map((f) => `${String(f?.name || '')}\n${String(f?.value || '')}`)
+    .join('\n\n');
+
+  const haystack = [
+    String(embed?.title || ''),
+    String(embed?.description || ''),
+    fieldPairs,
+    String(embed?.footer?.text || ''),
+    String(embed?.author?.name || ''),
+  ].join('\n');
+
+  const dataField = fields.find((f) => String(f?.name || '').toLowerCase() === 'data');
+  const dataText = String(dataField?.value || '');
+  let m = dataText.match(/—\s*<@!?([0-9]{15,25})>/);
+  if (m) return m[1];
+
+  m = haystack.match(/—\s*<@!?([0-9]{15,25})>/);
+  if (m) return m[1];
+
+  const namedField = fields.find((f) => /aprov|aceit|instrutor|gerent|respons|aprovador/i.test(String(f?.name || '')));
+  if (namedField) {
+    const v = String(namedField?.value || '');
+    const mm = v.match(/<@!?([0-9]{15,25})>/g);
+    if (mm?.length) {
+      const last = mm[mm.length - 1].match(/<@!?([0-9]{15,25})>/);
+      if (last) return last[1];
+    }
+  }
+
+  const all = haystack.match(/<@!?([0-9]{15,25})>/g);
+  if (all?.length) {
+    const last = all[all.length - 1].match(/<@!?([0-9]{15,25})>/);
+    if (last) return last[1];
+  }
+
+  return null;
 }
 
 function buildPanelMessage() {
@@ -108,8 +178,26 @@ function buildPanelMessage() {
   return { embeds: [embed], components: [row], files: brandingFiles() };
 }
 
+ function buildFarmTicketPanelMessage() {
+   const embed = new EmbedBuilder()
+     .setTitle('Pasta de Farm')
+     .setDescription('Crie sua pasta de farm.')
+     .setImage(`attachment://${BRAND_IMAGE_NAME}`)
+     .setFooter({ text: '© RealBala - Kat' })
+     .setColor(0x2b2d31);
+
+   const row = new ActionRowBuilder().addComponents(
+     new ButtonBuilder()
+       .setCustomId('open_farm_ticket')
+       .setLabel('Abrir')
+       .setStyle(ButtonStyle.Secondary)
+   );
+
+   return { embeds: [embed], components: [row], files: brandingFiles() };
+ }
+
 async function upsertPanelMessage(client) {
-  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null });
+  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null });
   const channel = await client.channels.fetch(PANEL_CHANNEL_ID);
   if (!channel?.isTextBased?.()) throw new Error('PANEL_CHANNEL_ID is not a text channel');
 
@@ -130,6 +218,29 @@ async function upsertPanelMessage(client) {
   state.panelMessageId = sent.id;
   writeJson(STATE_PATH, state);
 }
+
+ async function upsertFarmTicketPanelMessage(client) {
+   const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null });
+   const channel = await client.channels.fetch(FARM_TICKET_PANEL_CHANNEL_ID);
+   if (!channel?.isTextBased?.()) throw new Error('FARM_TICKET_PANEL_CHANNEL_ID is not a text channel');
+
+   const payload = buildFarmTicketPanelMessage();
+
+   if (state.farmTicketPanelMessageId) {
+     try {
+       const msg = await channel.messages.fetch(state.farmTicketPanelMessageId);
+       await msg.edit(payload);
+       return;
+     } catch {
+       state.farmTicketPanelMessageId = null;
+       writeJson(STATE_PATH, state);
+     }
+   }
+
+   const sent = await channel.send(payload);
+   state.farmTicketPanelMessageId = sent.id;
+   writeJson(STATE_PATH, state);
+ }
 
 function buildRegistrationEmbed(reg) {
   const decidedBy = reg.decidedBy ? `<@${reg.decidedBy}>` : '-';
@@ -171,31 +282,31 @@ function buildRegistrationActions(reg) {
 }
 
 function computeRanking(registrations) {
-  const counts = new Map();
-  for (const r of registrations) {
-    if (!r?.recruiterId) continue;
-    if (r.status !== 'approved') continue;
-    counts.set(r.recruiterId, (counts.get(r.recruiterId) || 0) + 1);
-  }
+  const approvals = readApprovals();
+  const countsObj = approvals?.counts && typeof approvals.counts === 'object' ? approvals.counts : {};
 
-  return [...counts.entries()]
+  return Object.entries(countsObj)
+    .map(([userId, total]) => [userId, Number(total) || 0])
+    .filter(([, total]) => total > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([recruiterId, total]) => ({ recruiterId, total }));
 }
 
 function buildRankingEmbed(ranking) {
   const embed = new EmbedBuilder()
-    .setTitle('Ranking de recrutamento')
+    .setTitle('Ranking de aprovações')
     .setColor(0x5865f2)
     .setImage(`attachment://${BRAND_IMAGE_NAME}`)
     .setFooter({ text: '© RealBala - Kat' });
 
   if (!ranking.length) {
-    embed.setDescription('Ainda não há registros.');
+    embed.setDescription('Ainda não há aprovações.');
     return embed;
   }
 
-  const lines = ranking.slice(0, 20).map((x, i) => `${i + 1}. ${recruiterDisplay(x.recruiterId)} — **${x.total}**`);
+  const lines = ranking
+    .slice(0, 20)
+    .map((x, i) => `${i + 1}. <@${x.recruiterId}> — **${x.total}**`);
   embed.setDescription(lines.join('\n'));
   return embed;
 }
@@ -205,7 +316,7 @@ async function upsertRankingMessage(client) {
   const ranking = computeRanking(registrations);
   const embed = buildRankingEmbed(ranking);
 
-  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null });
+  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null });
   const channel = await client.channels.fetch(RANKING_CHANNEL_ID);
   if (!channel?.isTextBased?.()) throw new Error('RANKING_CHANNEL_ID is not a text channel');
 
@@ -233,6 +344,12 @@ async function registerCommands() {
     new SlashCommandBuilder()
       .setName('painel-encomenda')
       .setDescription('Posta o painel de encomendas (embed com botão).'),
+    new SlashCommandBuilder()
+      .setName('painel-farm')
+      .setDescription('Posta o painel da Pasta de Farm (ticket).'),
+    new SlashCommandBuilder()
+      .setName('rebuild-ranking')
+      .setDescription('Reconstroi o ranking varrendo o canal histórico configurado.'),
   ].map((c) => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -267,7 +384,7 @@ function buildOrdersPanelMessage() {
 }
 
 async function upsertOrdersPanelMessage(client) {
-  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null });
+  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null });
   const channel = await client.channels.fetch(ORDERS_PANEL_CHANNEL_ID);
   if (!channel?.isTextBased?.()) throw new Error('ORDERS_PANEL_CHANNEL_ID is not a text channel');
 
@@ -363,6 +480,7 @@ client.once(Events.ClientReady, async () => {
   await registerCommands();
   await upsertPanelMessage(client);
   await upsertOrdersPanelMessage(client);
+  await upsertFarmTicketPanelMessage(client);
   await upsertRankingMessage(client);
 });
 
@@ -376,6 +494,46 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.commandName === 'painel-encomenda') {
         await upsertOrdersPanelMessage(client);
         await interaction.reply({ content: 'Painel de encomendas atualizado no canal configurado.', ephemeral: true });
+      }
+      if (interaction.commandName === 'painel-farm') {
+        await upsertFarmTicketPanelMessage(client);
+        await interaction.reply({ content: 'Painel da Pasta de Farm atualizado no canal configurado.', ephemeral: true });
+      }
+      if (interaction.commandName === 'rebuild-ranking') {
+        await interaction.deferReply({ ephemeral: true });
+
+        if (!interaction.inGuild()) {
+          await interaction.editReply({ content: 'Essa ação só funciona dentro do servidor.' });
+          return;
+        }
+
+        const sourceChannel = await client.channels.fetch(RANKING_SOURCE_CHANNEL_ID);
+        if (!sourceChannel?.isTextBased?.()) throw new Error('RANKING_SOURCE_CHANNEL_ID is not a text channel');
+
+        const counts = {};
+        let before;
+        let scanned = 0;
+
+        while (true) {
+          const batch = await sourceChannel.messages.fetch({ limit: 100, before });
+          if (!batch.size) break;
+
+          for (const msg of batch.values()) {
+            scanned += 1;
+            const embeds = msg.embeds || [];
+            for (const e of embeds) {
+              const userId = extractApproverIdFromEmbed(e);
+              if (!userId) continue;
+              counts[userId] = (counts[userId] || 0) + 1;
+            }
+          }
+
+          before = batch.last()?.id;
+        }
+
+        writeApprovals({ counts, rebuiltAt: new Date().toISOString(), scannedMessages: scanned, sourceChannelId: RANKING_SOURCE_CHANNEL_ID });
+        await upsertRankingMessage(client);
+        await interaction.editReply({ content: `Ranking reconstruído. Mensagens lidas: ${scanned}. Pessoas no ranking: ${Object.keys(counts).length}.` });
       }
       return;
     }
@@ -420,6 +578,78 @@ client.on('interactionCreate', async (interaction) => {
         );
 
         await interaction.showModal(modal);
+        return;
+      }
+
+      if (interaction.customId === 'open_farm_ticket') {
+        await interaction.deferReply({ ephemeral: true });
+        if (!interaction.inGuild()) {
+          await interaction.editReply({ content: 'Essa ação só funciona dentro do servidor.' });
+          return;
+        }
+
+        const channels = await interaction.guild.channels.fetch();
+        const existing = channels.find(
+          (c) =>
+            c?.type === ChannelType.GuildText &&
+            c.parentId === FARM_TICKET_CATEGORY_ID &&
+            c.topic === `farm-ticket:${interaction.user.id}`
+        );
+
+        if (existing) {
+          await interaction.editReply({ content: `Sua Pasta de Farm já está aberta: <#${existing.id}>` });
+          return;
+        }
+
+        const base = (interaction.user.username || 'usuario')
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]/g, '-')
+          .slice(0, 20);
+        const channelName = `farm-${base}-${interaction.user.id.slice(-4)}`;
+
+        const created = await interaction.guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: FARM_TICKET_CATEGORY_ID,
+          topic: `farm-ticket:${interaction.user.id}`,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.roles.everyone.id,
+              deny: [PermissionsBitField.Flags.ViewChannel],
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+              ],
+            },
+            {
+              id: client.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.ManageChannels,
+                PermissionsBitField.Flags.ManageMessages,
+              ],
+            },
+          ],
+        });
+
+        await created.send({
+          content:
+            `<@${interaction.user.id}> sua Pasta de Farm foi aberta.\n\n` +
+            `**Seguir Modelo**\n\n` +
+            `-  item que farmou:\n` +
+            `- quantidade:\n` +
+            `- dia e horas:\n` +
+            `- print com data e hora\n\n` +
+            `Caso não consiga tirar print  enviar pra gerencia mas deixar claro aqui no canal e mencionar o gerente. Quais quer outra informação deixar explicado aqui.`,
+        });
+
+        await interaction.editReply({ content: `Ticket criado: <#${created.id}>` });
         return;
       }
 
@@ -640,26 +870,47 @@ client.on('interactionCreate', async (interaction) => {
           return;
         }
 
-        const registrations = readJson(REGISTRATIONS_PATH, []);
-        const idx = registrations.findIndex((r) => r?.id === regId);
-        if (idx === -1) {
+        const result = await withRegistrationsLock(async () => {
+          const registrations = readJson(REGISTRATIONS_PATH, []);
+          const idx = registrations.findIndex((r) => r?.id === regId);
+          if (idx === -1) return { kind: 'not_found' };
+
+          const reg = registrations[idx];
+          if (reg.status && reg.status !== 'pending') return { kind: 'already_done' };
+
+          reg.status = isAccept ? 'approved' : 'rejected';
+          reg.decidedAt = new Date().toISOString();
+          reg.decidedBy = interaction.user.id;
+
+          registrations[idx] = reg;
+          writeJson(REGISTRATIONS_PATH, registrations);
+
+          if (isAccept) {
+            const approvals = readApprovals();
+            const counts = approvals?.counts && typeof approvals.counts === 'object' ? approvals.counts : {};
+            counts[interaction.user.id] = (counts[interaction.user.id] || 0) + 1;
+            writeApprovals({ ...approvals, counts });
+          }
+
+          await upsertRankingMessage(client);
+
+          return { kind: 'ok', reg };
+        });
+
+        if (result.kind === 'not_found') {
           await interaction.editReply({ content: 'Registro não encontrado.' });
           return;
         }
-
-        const reg = registrations[idx];
-        if (reg.status && reg.status !== 'pending') {
+        if (result.kind === 'already_done') {
           await interaction.editReply({ content: 'Esse registro já foi analisado.' });
           return;
         }
 
+        const reg = result.reg;
+
         const me = await interaction.guild.members.fetchMe();
         if (!me.permissions.has('ManageNicknames')) throw new Error('Bot missing permission: ManageNicknames');
         if (!me.permissions.has('ManageRoles')) throw new Error('Bot missing permission: ManageRoles');
-
-        reg.status = isAccept ? 'approved' : 'rejected';
-        reg.decidedAt = new Date().toISOString();
-        reg.decidedBy = interaction.user.id;
 
         if (isAccept) {
           try {
@@ -672,12 +923,8 @@ client.on('interactionCreate', async (interaction) => {
           }
         }
 
-        registrations[idx] = reg;
-        writeJson(REGISTRATIONS_PATH, registrations);
-
         const embed = buildRegistrationEmbed(reg);
         await interaction.message.edit({ embeds: [embed], components: [], files: brandingFiles() });
-        await upsertRankingMessage(client);
         await interaction.editReply({ content: isAccept ? 'Registro aprovado.' : 'Registro recusado.' });
         return;
       }
@@ -691,7 +938,7 @@ client.on('interactionCreate', async (interaction) => {
         const userIdProvided = interaction.fields.getTextInputValue('user_id')?.trim();
         const phone = interaction.fields.getTextInputValue('phone')?.trim();
         const recruiterRaw = interaction.fields.getTextInputValue('recruiter_id')?.trim();
-        const recruiterId = normalizeRecruiterId(recruiterRaw);
+        const recruiterId = recruiterRaw || null;
 
         const reg = {
           id: `${Date.now()}_${interaction.user.id}`,
@@ -699,20 +946,21 @@ client.on('interactionCreate', async (interaction) => {
           name,
           userIdProvided,
           phone,
-          recruiterId: recruiterId || null,
+          recruiterId,
           status: 'pending',
           createdAt: new Date().toISOString(),
         };
 
-        const registrations = readJson(REGISTRATIONS_PATH, []);
-        registrations.push(reg);
-        writeJson(REGISTRATIONS_PATH, registrations);
+        await withRegistrationsLock(async () => {
+          const registrations = readJson(REGISTRATIONS_PATH, []);
+          registrations.push(reg);
+          writeJson(REGISTRATIONS_PATH, registrations);
+          await upsertRankingMessage(client);
+        });
 
         const channel = await client.channels.fetch(REGISTRATION_CHANNEL_ID);
         if (!channel?.isTextBased?.()) throw new Error('REGISTRATION_CHANNEL_ID is not a text channel');
         await channel.send({ embeds: [buildRegistrationEmbed(reg)], components: buildRegistrationActions(reg), files: brandingFiles() });
-
-        await upsertRankingMessage(client);
         await interaction.reply({ content: 'Registro enviado com sucesso. Aguarde um instrutor aprovar.', ephemeral: true });
         return;
       }
