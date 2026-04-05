@@ -589,8 +589,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const channels = await interaction.guild.channels.fetch();
-        
-        // Verificar se já tem um ticket aberto
         const existing = channels.find(
           (c) =>
             c?.type === ChannelType.GuildText &&
