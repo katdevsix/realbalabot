@@ -35,7 +35,30 @@ const {
 } = process.env;
 
 const FARM_TICKET_PANEL_CHANNEL_ID = '1452781827407216837';
-const FARM_TICKET_CATEGORY_ID = '1452781296618049619';
+
+// Lista de categorias de farm (múltiplas para superar limite de 50 canais)
+const FARM_TICKET_CATEGORY_IDS = [
+  '1452781296618049619', // Categoria 1
+  '1490373062279827548', // Categoria 2
+  // Adicione mais IDs de categorias aqui conforme necessário
+];
+
+// Função para encontrar categoria com espaço disponível
+async function findAvailableFarmCategory(guild) {
+  const channels = await guild.channels.fetch();
+  
+  for (const categoryId of FARM_TICKET_CATEGORY_IDS) {
+    const categoryChannels = channels.filter(
+      (c) => c?.type === ChannelType.GuildText && c.parentId === categoryId
+    );
+    
+    if (categoryChannels.size < 50) {
+      return categoryId;
+    }
+  }
+  
+  return null; // Todas as categorias estão cheias
+}
 
 if (!DISCORD_TOKEN) throw new Error('Missing DISCORD_TOKEN in .env');
 if (!CLIENT_ID) throw new Error('Missing CLIENT_ID in .env');
@@ -589,15 +612,27 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const channels = await interaction.guild.channels.fetch();
+        
+        // Verificar se já tem um ticket aberto em qualquer categoria de farm
         const existing = channels.find(
           (c) =>
             c?.type === ChannelType.GuildText &&
-            c.parentId === FARM_TICKET_CATEGORY_ID &&
+            FARM_TICKET_CATEGORY_IDS.includes(c.parentId) &&
             c.topic === `farm-ticket:${interaction.user.id}`
         );
 
         if (existing) {
           await interaction.editReply({ content: `Sua Pasta de Farm já está aberta: <#${existing.id}>` });
+          return;
+        }
+
+        // Encontrar categoria com espaço disponível
+        const availableCategory = await findAvailableFarmCategory(interaction.guild);
+        
+        if (!availableCategory) {
+          await interaction.editReply({ 
+            content: '⚠️ Todas as categorias de Farm atingiram o limite de 50 canais do Discord. Por favor, peça a um administrador para:\n\n1. Deletar tickets antigos/inativos\n2. Ou adicionar uma nova categoria de farm no código' 
+          });
           return;
         }
 
@@ -610,7 +645,7 @@ client.on('interactionCreate', async (interaction) => {
         const created = await interaction.guild.channels.create({
           name: channelName,
           type: ChannelType.GuildText,
-          parent: FARM_TICKET_CATEGORY_ID,
+          parent: availableCategory,
           topic: `farm-ticket:${interaction.user.id}`,
           permissionOverwrites: [
             {
