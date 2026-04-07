@@ -355,26 +355,42 @@ async function upsertEliteTicketPanelMessage(client) {
 }
 
 async function upsertAnnouncementPanelMessage(client) {
+  console.log(`📢 Tentando configurar painel de anúncio no canal ${ANNOUNCEMENT_PANEL_CHANNEL_ID}...`);
+  
   const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null, eliteTicketPanelMessageId: null, announcementPanelMessageId: null });
-  const channel = await client.channels.fetch(ANNOUNCEMENT_PANEL_CHANNEL_ID);
-  if (!channel?.isTextBased?.()) throw new Error('ANNOUNCEMENT_PANEL_CHANNEL_ID is not a text channel');
-
-  const payload = buildAnnouncementPanelMessage();
-
-  if (state.announcementPanelMessageId) {
-    try {
-      const msg = await channel.messages.fetch(state.announcementPanelMessageId);
-      await msg.edit(payload);
-      return;
-    } catch {
-      state.announcementPanelMessageId = null;
-      writeJson(STATE_PATH, state);
+  
+  try {
+    const channel = await client.channels.fetch(ANNOUNCEMENT_PANEL_CHANNEL_ID);
+    if (!channel?.isTextBased?.()) {
+      console.error(`❌ Canal ${ANNOUNCEMENT_PANEL_CHANNEL_ID} não é um canal de texto ou não existe`);
+      throw new Error('ANNOUNCEMENT_PANEL_CHANNEL_ID is not a text channel');
     }
-  }
+    
+    console.log(`✅ Canal ${channel.name} encontrado e é um canal de texto`);
 
-  const sent = await channel.send(payload);
-  state.announcementPanelMessageId = sent.id;
-  writeJson(STATE_PATH, state);
+    const payload = buildAnnouncementPanelMessage();
+
+    if (state.announcementPanelMessageId) {
+      try {
+        const msg = await channel.messages.fetch(state.announcementPanelMessageId);
+        await msg.edit(payload);
+        console.log('✅ Painel de anúncio atualizado com sucesso');
+        return;
+      } catch {
+        state.announcementPanelMessageId = null;
+        writeJson(STATE_PATH, state);
+      }
+    }
+
+    const sent = await channel.send(payload);
+    state.announcementPanelMessageId = sent.id;
+    writeJson(STATE_PATH, state);
+    console.log('✅ Painel de anúncio criado com sucesso');
+    
+  } catch (error) {
+    console.error('❌ Erro ao configurar painel de anúncio:', error);
+    throw error;
+  }
 }
 
 function buildRegistrationEmbed(reg) {
@@ -622,13 +638,34 @@ function buildOrderPendingActions(order) {
  }
 
 client.once(Events.ClientReady, async () => {
-  await registerCommands();
-  await upsertPanelMessage(client);
-  await upsertOrdersPanelMessage(client);
-  await upsertFarmTicketPanelMessage(client);
-  await upsertEliteTicketPanelMessage(client);
-  await upsertAnnouncementPanelMessage(client);
-  await upsertRankingMessage(client);
+  console.log('🤖 Bot iniciado, começando a configurar painéis...');
+  
+  try {
+    await registerCommands();
+    console.log('✅ Comandos registrados');
+    
+    await upsertPanelMessage(client);
+    console.log('✅ Painel de registro criado');
+    
+    await upsertOrdersPanelMessage(client);
+    console.log('✅ Painel de encomendas criado');
+    
+    await upsertFarmTicketPanelMessage(client);
+    console.log('✅ Painel de farm criado');
+    
+    await upsertEliteTicketPanelMessage(client);
+    console.log('✅ Painel de elite criado');
+    
+    await upsertAnnouncementPanelMessage(client);
+    console.log('✅ Painel de anúncio criado');
+    
+    await upsertRankingMessage(client);
+    console.log('✅ Ranking atualizado');
+    
+    console.log('🎉 Todos os painéis foram configurados com sucesso!');
+  } catch (error) {
+    console.error('❌ Erro ao configurar painéis:', error);
+  }
 });
 
 client.on('interactionCreate', async (interaction) => {
