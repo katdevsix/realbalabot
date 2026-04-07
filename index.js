@@ -439,6 +439,13 @@ async function registerCommands() {
       .setName('painel-elite')
       .setDescription('Posta o painel da Pasta de Elite (ticket).'),
     new SlashCommandBuilder()
+      .setName('anunciar')
+      .setDescription('Envia mensagem de aviso importante para todos os membros.')
+      .addStringOption(option =>
+        option.setName('mensagem')
+          .setDescription('Mensagem a ser enviada após o título')
+          .setRequired(true)),
+    new SlashCommandBuilder()
       .setName('rebuild-ranking')
       .setDescription('Reconstroi o ranking varrendo o canal histórico configurado.'),
   ].map((c) => c.toJSON());
@@ -594,6 +601,52 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.commandName === 'painel-elite') {
         await upsertEliteTicketPanelMessage(client);
         await interaction.reply({ content: 'Painel da Pasta de Elite atualizado no canal configurado.', ephemeral: true });
+      }
+      if (interaction.commandName === 'anunciar') {
+        await interaction.deferReply({ ephemeral: true });
+        
+        if (!interaction.inGuild()) {
+          await interaction.editReply({ content: 'Essa ação só funciona dentro do servidor.' });
+          return;
+        }
+
+        const userMessage = interaction.options.getString('mensagem');
+        const message = `📢 **Aviso Importante**
+
+${userMessage}`;
+        const guild = interaction.guild;
+        
+        await interaction.editReply({ content: '📤 Enviando mensagem para todos os membros...' });
+        
+        try {
+          const members = await guild.members.fetch();
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const member of members.values()) {
+            if (member.user.bot) continue; // Pula bots
+            
+            try {
+              await member.send(message);
+              successCount++;
+              // Pequeno delay para não atingir rate limits
+              if (successCount % 10 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            } catch (error) {
+              failCount++;
+              console.log(`Falha ao enviar para ${member.user.tag}: ${error.message}`);
+            }
+          }
+          
+          await interaction.editReply({ 
+            content: `✅ **Anúncio enviado com sucesso!**\n\n📊 **Estatísticas:**\n✅ Enviados: ${successCount}\n❌ Falhas: ${failCount}\n👥 Total de membros: ${members.size - [...members.values()].filter(m => m.user.bot).length}` 
+          });
+          
+        } catch (error) {
+          console.error('Erro ao buscar membros:', error);
+          await interaction.editReply({ content: '❌ Ocorreu um erro ao buscar os membros do servidor.' });
+        }
       }
       if (interaction.commandName === 'rebuild-ranking') {
         await interaction.deferReply({ ephemeral: true });
