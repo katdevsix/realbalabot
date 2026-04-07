@@ -35,6 +35,7 @@ const {
 } = process.env;
 
 const FARM_TICKET_PANEL_CHANNEL_ID = '1452781827407216837';
+const ELITE_TICKET_PANEL_CHANNEL_ID = '1490871796562399477';
 
 // Lista de categorias de farm (múltiplas para superar limite de 50 canais)
 const FARM_TICKET_CATEGORY_IDS = [
@@ -43,11 +44,34 @@ const FARM_TICKET_CATEGORY_IDS = [
   // Adicione mais IDs de categorias aqui conforme necessário
 ];
 
+// Lista de categorias de elite (múltiplas para superar limite de 50 canais)
+const ELITE_TICKET_CATEGORY_IDS = [
+  '1490867310561595442', // Categoria 1
+  // Adicione mais IDs de categorias aqui conforme necessário
+];
+
 // Função para encontrar categoria com espaço disponível
 async function findAvailableFarmCategory(guild) {
   const channels = await guild.channels.fetch();
   
   for (const categoryId of FARM_TICKET_CATEGORY_IDS) {
+    const categoryChannels = channels.filter(
+      (c) => c?.type === ChannelType.GuildText && c.parentId === categoryId
+    );
+    
+    if (categoryChannels.size < 50) {
+      return categoryId;
+    }
+  }
+  
+  return null; // Todas as categorias estão cheias
+}
+
+// Função para encontrar categoria de elite com espaço disponível
+async function findAvailableEliteCategory(guild) {
+  const channels = await guild.channels.fetch();
+  
+  for (const categoryId of ELITE_TICKET_CATEGORY_IDS) {
     const categoryChannels = channels.filter(
       (c) => c?.type === ChannelType.GuildText && c.parentId === categoryId
     );
@@ -201,23 +225,23 @@ function buildPanelMessage() {
   return { embeds: [embed], components: [row], files: brandingFiles() };
 }
 
- function buildFarmTicketPanelMessage() {
-   const embed = new EmbedBuilder()
-     .setTitle('Pasta de Farm')
-     .setDescription('Crie sua pasta de farm.')
-     .setImage(`attachment://${BRAND_IMAGE_NAME}`)
-     .setFooter({ text: '© RealBala - Kat' })
-     .setColor(0x2b2d31);
+function buildEliteTicketPanelMessage() {
+  const embed = new EmbedBuilder()
+    .setTitle('Registro de farm da Elite')
+    .setDescription('Crie sua pasta de farm.')
+    .setImage(`attachment://${BRAND_IMAGE_NAME}`)
+    .setFooter({ text: '© RealBala - Kat' })
+    .setColor(0x2b2d31);
 
-   const row = new ActionRowBuilder().addComponents(
-     new ButtonBuilder()
-       .setCustomId('open_farm_ticket')
-       .setLabel('Abrir')
-       .setStyle(ButtonStyle.Secondary)
-   );
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('open_elite_ticket')
+      .setLabel('Abrir')
+      .setStyle(ButtonStyle.Secondary)
+  );
 
-   return { embeds: [embed], components: [row], files: brandingFiles() };
- }
+  return { embeds: [embed], components: [row], files: brandingFiles() };
+}
 
 async function upsertPanelMessage(client) {
   const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null });
@@ -263,7 +287,30 @@ async function upsertPanelMessage(client) {
    const sent = await channel.send(payload);
    state.farmTicketPanelMessageId = sent.id;
    writeJson(STATE_PATH, state);
- }
+}
+
+async function upsertEliteTicketPanelMessage(client) {
+  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null, eliteTicketPanelMessageId: null });
+  const channel = await client.channels.fetch(ELITE_TICKET_PANEL_CHANNEL_ID);
+  if (!channel?.isTextBased?.()) throw new Error('ELITE_TICKET_PANEL_CHANNEL_ID is not a text channel');
+
+  const payload = buildEliteTicketPanelMessage();
+
+  if (state.eliteTicketPanelMessageId) {
+    try {
+      const msg = await channel.messages.fetch(state.eliteTicketPanelMessageId);
+      await msg.edit(payload);
+      return;
+    } catch {
+      state.eliteTicketPanelMessageId = null;
+      writeJson(STATE_PATH, state);
+    }
+  }
+
+  const sent = await channel.send(payload);
+  state.eliteTicketPanelMessageId = sent.id;
+  writeJson(STATE_PATH, state);
+}
 
 function buildRegistrationEmbed(reg) {
   const decidedBy = reg.decidedBy ? `<@${reg.decidedBy}>` : '-';
@@ -370,6 +417,9 @@ async function registerCommands() {
     new SlashCommandBuilder()
       .setName('painel-farm')
       .setDescription('Posta o painel da Pasta de Farm (ticket).'),
+    new SlashCommandBuilder()
+      .setName('painel-elite')
+      .setDescription('Posta o painel da Pasta de Elite (ticket).'),
     new SlashCommandBuilder()
       .setName('rebuild-ranking')
       .setDescription('Reconstroi o ranking varrendo o canal histórico configurado.'),
@@ -504,6 +554,7 @@ client.once(Events.ClientReady, async () => {
   await upsertPanelMessage(client);
   await upsertOrdersPanelMessage(client);
   await upsertFarmTicketPanelMessage(client);
+  await upsertEliteTicketPanelMessage(client);
   await upsertRankingMessage(client);
 });
 
@@ -521,6 +572,10 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.commandName === 'painel-farm') {
         await upsertFarmTicketPanelMessage(client);
         await interaction.reply({ content: 'Painel da Pasta de Farm atualizado no canal configurado.', ephemeral: true });
+      }
+      if (interaction.commandName === 'painel-elite') {
+        await upsertEliteTicketPanelMessage(client);
+        await interaction.reply({ content: 'Painel da Pasta de Elite atualizado no canal configurado.', ephemeral: true });
       }
       if (interaction.commandName === 'rebuild-ranking') {
         await interaction.deferReply({ ephemeral: true });
@@ -676,6 +731,90 @@ client.on('interactionCreate', async (interaction) => {
         await created.send({
           content:
             `<@${interaction.user.id}> sua Pasta de Farm foi aberta.\n\n` +
+            `**Seguir Modelo**\n\n` +
+            `-  item que farmou:\n` +
+            `- quantidade:\n` +
+            `- dia e horas:\n` +
+            `- print com data e hora\n\n` +
+            `Caso não consiga tirar print  enviar pra gerencia mas deixar claro aqui no canal e mencionar o gerente. Quais quer outra informação deixar explicado aqui.`,
+        });
+
+        await interaction.editReply({ content: `Ticket criado: <#${created.id}>` });
+        return;
+      }
+
+      if (interaction.customId === 'open_elite_ticket') {
+        await interaction.deferReply({ ephemeral: true });
+        if (!interaction.inGuild()) {
+          await interaction.editReply({ content: 'Essa ação só funciona dentro do servidor.' });
+          return;
+        }
+
+        const channels = await interaction.guild.channels.fetch();
+        
+        // Verificar se já tem um ticket aberto em qualquer categoria de elite
+        const existing = channels.find(
+          (c) =>
+            c?.type === ChannelType.GuildText &&
+            ELITE_TICKET_CATEGORY_IDS.includes(c.parentId) &&
+            c.topic === `elite-ticket:${interaction.user.id}`
+        );
+
+        if (existing) {
+          await interaction.editReply({ content: `Sua Pasta de Elite já está aberta: <#${existing.id}>` });
+          return;
+        }
+
+        // Encontrar categoria com espaço disponível
+        const availableCategory = await findAvailableEliteCategory(interaction.guild);
+        
+        if (!availableCategory) {
+          await interaction.editReply({ 
+            content: '⚠️ Todas as categorias de Elite atingiram o limite de 50 canais do Discord. Por favor, peça a um administrador para:\n\n1. Deletar tickets antigos/inativos\n2. Ou adicionar uma nova categoria de elite no código' 
+          });
+          return;
+        }
+
+        const base = (interaction.user.username || 'usuario')
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]/g, '-')
+          .slice(0, 20);
+        const channelName = `elite-${base}-${interaction.user.id.slice(-4)}`;
+
+        const created = await interaction.guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: availableCategory,
+          topic: `elite-ticket:${interaction.user.id}`,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.roles.everyone.id,
+              deny: [PermissionsBitField.Flags.ViewChannel],
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+              ],
+            },
+            {
+              id: client.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+                PermissionsBitField.Flags.ManageChannels,
+                PermissionsBitField.Flags.ManageMessages,
+              ],
+            },
+          ],
+        });
+
+        await created.send({
+          content:
+            `<@${interaction.user.id}> sua Pasta de Elite foi aberta.\n\n` +
             `**Seguir Modelo**\n\n` +
             `-  item que farmou:\n` +
             `- quantidade:\n` +
