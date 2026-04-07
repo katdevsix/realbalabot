@@ -1282,11 +1282,18 @@ ${userMessage}`;
     }
 
     if (interaction.isModalSubmit()) {
+      console.log(`📝 Modal recebido: ${interaction.customId}`);
+      
       if (interaction.customId === 'announcement_modal') {
+        console.log('📢 Processando modal de anúncio...');
+        
         const userMessage = interaction.fields.getTextInputValue('announcement_message')?.trim();
+        console.log(`📄 Mensagem recebida: "${userMessage}"`);
+        
         const message = `📢 **Aviso Importante**\n\n${userMessage}`;
         
         await interaction.reply({ content: '📤 Enviando mensagem para todos os membros...', ephemeral: true });
+        console.log('📤 Iniciando envio para membros...');
         
         try {
           const guild = interaction.guild;
@@ -1310,12 +1317,16 @@ ${userMessage}`;
             }
           }
           
+          console.log(`📊 Estatísticas finais: ${successCount} enviados, ${failCount} falhas`);
+          
           await interaction.editReply({ 
             content: `✅ **Anúncio enviado com sucesso!**\n\n📊 **Estatísticas:**\n✅ Enviados: ${successCount}\n❌ Falhas: ${failCount}\n👥 Total de membros: ${members.size - [...members.values()].filter(m => m.user.bot).length}` 
           });
           
+          console.log('✅ Anúncio concluído com sucesso!');
+          
         } catch (error) {
-          console.error('Erro ao buscar membros:', error);
+          console.error('❌ Erro ao buscar membros:', error);
           await interaction.editReply({ content: '❌ Ocorreu um erro ao buscar os membros do servidor.', ephemeral: true });
         }
       }
