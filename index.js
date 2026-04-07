@@ -243,6 +243,24 @@ function buildEliteTicketPanelMessage() {
   return { embeds: [embed], components: [row], files: brandingFiles() };
 }
 
+function buildFarmTicketPanelMessage() {
+  const embed = new EmbedBuilder()
+    .setTitle('Pasta de Farm')
+    .setDescription('Crie sua pasta de farm.')
+    .setImage(`attachment://${BRAND_IMAGE_NAME}`)
+    .setFooter({ text: '© RealBala - Kat' })
+    .setColor(0x2b2d31);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('open_farm_ticket')
+      .setLabel('Abrir')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row], files: brandingFiles() };
+}
+
 async function upsertPanelMessage(client) {
   const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null });
   const channel = await client.channels.fetch(PANEL_CHANNEL_ID);
