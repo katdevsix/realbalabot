@@ -36,6 +36,7 @@ const {
 
 const FARM_TICKET_PANEL_CHANNEL_ID = '1452781827407216837';
 const ELITE_TICKET_PANEL_CHANNEL_ID = '1490871796562399477';
+const ANNOUNCEMENT_PANEL_CHANNEL_ID = '1490875725853491210';
 
 // Lista de categorias de farm (múltiplas para superar limite de 50 canais)
 const FARM_TICKET_CATEGORY_IDS = [
@@ -243,6 +244,29 @@ function buildEliteTicketPanelMessage() {
   return { embeds: [embed], components: [row], files: brandingFiles() };
 }
 
+function buildAnnouncementPanelMessage() {
+  const embed = new EmbedBuilder()
+    .setTitle('📢 Sistema de Anúncios')
+    .setDescription('Clique no botão abaixo para enviar um aviso importante para todos os membros do servidor.')
+    .addFields(
+      { name: '📤 Como funciona', value: 'Ao clicar, você poderá digitar sua mensagem e o bot enviará para todos os membros via DM.', inline: false },
+      { name: '⚠️ Importante', value: 'Use com responsabilidade. Todos os membros receberão sua mensagem.', inline: false }
+    )
+    .setImage(`attachment://${BRAND_IMAGE_NAME}`)
+    .setFooter({ text: '© RealBala - Kat' })
+    .setColor(0x2b2d31);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('open_announcement_modal')
+      .setLabel('Enviar Anúncio')
+      .setEmoji('📢')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  return { embeds: [embed], components: [row], files: brandingFiles() };
+}
+
 function buildFarmTicketPanelMessage() {
   const embed = new EmbedBuilder()
     .setTitle('Pasta de Farm')
@@ -327,6 +351,29 @@ async function upsertEliteTicketPanelMessage(client) {
 
   const sent = await channel.send(payload);
   state.eliteTicketPanelMessageId = sent.id;
+  writeJson(STATE_PATH, state);
+}
+
+async function upsertAnnouncementPanelMessage(client) {
+  const state = readJson(STATE_PATH, { rankingMessageId: null, panelMessageId: null, orderPanelMessageId: null, farmTicketPanelMessageId: null, eliteTicketPanelMessageId: null, announcementPanelMessageId: null });
+  const channel = await client.channels.fetch(ANNOUNCEMENT_PANEL_CHANNEL_ID);
+  if (!channel?.isTextBased?.()) throw new Error('ANNOUNCEMENT_PANEL_CHANNEL_ID is not a text channel');
+
+  const payload = buildAnnouncementPanelMessage();
+
+  if (state.announcementPanelMessageId) {
+    try {
+      const msg = await channel.messages.fetch(state.announcementPanelMessageId);
+      await msg.edit(payload);
+      return;
+    } catch {
+      state.announcementPanelMessageId = null;
+      writeJson(STATE_PATH, state);
+    }
+  }
+
+  const sent = await channel.send(payload);
+  state.announcementPanelMessageId = sent.id;
   writeJson(STATE_PATH, state);
 }
 
@@ -580,6 +627,7 @@ client.once(Events.ClientReady, async () => {
   await upsertOrdersPanelMessage(client);
   await upsertFarmTicketPanelMessage(client);
   await upsertEliteTicketPanelMessage(client);
+  await upsertAnnouncementPanelMessage(client);
   await upsertRankingMessage(client);
 });
 
@@ -898,6 +946,25 @@ ${userMessage}`;
         return;
       }
 
+      if (interaction.customId === 'open_announcement_modal') {
+        const modal = new ModalBuilder().setCustomId('announcement_modal').setTitle('Enviar Anúncio');
+
+        const messageInput = new TextInputBuilder()
+          .setCustomId('announcement_message')
+          .setLabel('Mensagem do anúncio')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1000)
+          .setPlaceholder('Digite sua mensagem aqui...');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(messageInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
+      }
+
       if (interaction.customId === 'open_order_modal') {
         const modal = new ModalBuilder().setCustomId('order_modal').setTitle('Criar encomenda');
 
@@ -1178,6 +1245,44 @@ ${userMessage}`;
     }
 
     if (interaction.isModalSubmit()) {
+      if (interaction.customId === 'announcement_modal') {
+        const userMessage = interaction.fields.getTextInputValue('announcement_message')?.trim();
+        const message = `📢 **Aviso Importante**\n\n${userMessage}`;
+        
+        await interaction.reply({ content: '📤 Enviando mensagem para todos os membros...', ephemeral: true });
+        
+        try {
+          const guild = interaction.guild;
+          const members = await guild.members.fetch();
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const member of members.values()) {
+            if (member.user.bot) continue; // Pula bots
+            
+            try {
+              await member.send(message);
+              successCount++;
+              // Pequeno delay para não atingir rate limits
+              if (successCount % 10 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            } catch (error) {
+              failCount++;
+              console.log(`Falha ao enviar para ${member.user.tag}: ${error.message}`);
+            }
+          }
+          
+          await interaction.editReply({ 
+            content: `✅ **Anúncio enviado com sucesso!**\n\n📊 **Estatísticas:**\n✅ Enviados: ${successCount}\n❌ Falhas: ${failCount}\n👥 Total de membros: ${members.size - [...members.values()].filter(m => m.user.bot).length}` 
+          });
+          
+        } catch (error) {
+          console.error('Erro ao buscar membros:', error);
+          await interaction.editReply({ content: '❌ Ocorreu um erro ao buscar os membros do servidor.', ephemeral: true });
+        }
+      }
+      
       if (interaction.customId === 'registration_modal') {
         const name = interaction.fields.getTextInputValue('name')?.trim();
         const userIdProvided = interaction.fields.getTextInputValue('user_id')?.trim();
